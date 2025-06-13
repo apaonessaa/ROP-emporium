@@ -5,6 +5,8 @@ Write up della challenge **split** di **ROP emporium** delle versioni **x86** e 
 - [Challenge Information](#challenge-information)
 - [Binary Analysis - x86](#binary-analysis---x86)
 - [Capture The Flag - x86](#capture-the-flag---x86)
+- [Binary Analysis - x86 64](#binary-analysis-x86-64)
+- [Capture The Flag - x86 64](#capture-the-flag-x86-64)
 
 ## Challenge Information
 
@@ -334,7 +336,7 @@ $ ropper --file split --search "pop rdi"
 
 * `/bin/cat flag.txt`: 0x4007c3
 
-## Get the flag (x86-64)
+## Capture The flag (x86-64)
 
 The form of the `payload` to be constructed is as follows:
 
